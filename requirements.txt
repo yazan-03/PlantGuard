@@ -1,0 +1,6 @@
+flask
+tensorflow-cpu
+numpy
+googletrans==4.0.0-rc1
+pillow
+gunicorn

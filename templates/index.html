@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Plant Disease Detection</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(to right, #e0f7fa, #e0ffe0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+        }
+
+        .container {
+            background: white;
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #2e7d32;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        input[type="file"] {
+            display: block;
+            margin: 0 auto 20px auto;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #4CAF50;
+            color: white;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #388E3C;
+        }
+
+        img#preview {
+            max-width: 100%;
+            max-height: 300px;
+            display: block;
+            margin: 20px auto 0 auto;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .result {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .arabic {
+            direction: rtl;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        select#lang-select {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="title">🌿 Plant Disease Detector</h1>
+
+        <form id="upload-form">
+            <input type="file" name="image" id="image" accept="image/*" required>
+            <input type="hidden" name="lang" id="lang-select" value="en">
+            <button type="submit" id="detect-btn">Detect</button>
+        </form>
+
+        <div class="result" id="result"></div>
+        <img id="preview" />
+
+        <br><br>
+        <button id="lang-toggle" onclick="toggleLanguage()">🌐 Switch Language</button>
+    </div>
+
+    <script>
+        let currentLang = 'en';
+
+        const translations = {
+            "🌿 Plant Disease Detector": "🌿 كاشف أمراض النبات",
+            "Detect": "تعرّف",
+            "Switch Language": "تبديل اللغة",
+            "Detected class: ": "اسم النبات أو المرض: ",
+            "Treatment: ": "العلاج: "
+        };
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'ar' : 'en';
+            document.getElementById("lang-select").value = currentLang;
+
+            document.body.classList.toggle("arabic", currentLang === 'ar');
+            document.getElementById("title").textContent = currentLang === 'ar'
+                ? translations["🌿 Plant Disease Detector"]
+                : "🌿 Plant Disease Detector";
+
+            document.getElementById("detect-btn").textContent = currentLang === 'ar'
+                ? translations["Detect"]
+                : "Detect";
+
+            document.getElementById("lang-toggle").textContent = currentLang === 'ar'
+                ? translations["Switch Language"]
+                : "🌐 Switch Language";
+
+            // re-display result with new language labels
+            const result = document.getElementById("result").dataset;
+            if (result.class && result.treatment) {
+                displayResult(result.class, result.treatment);
+            }
+        }
+
+        function displayResult(predictedClass, treatment) {
+            const resultDiv = document.getElementById("result");
+            resultDiv.dataset.class = predictedClass;
+            resultDiv.dataset.treatment = treatment;
+
+            resultDiv.innerHTML = `
+                ${currentLang === 'ar' ? translations["Detected class: "] : "Detected class: "} ${predictedClass}<br>
+                ${currentLang === 'ar' ? translations["Treatment: "] : "Treatment: "} ${treatment}
+            `;
+        }
+
+        document.getElementById("upload-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            const fileField = document.getElementById("image");
+            formData.append("image", fileField.files[0]);
+            formData.append("lang", document.getElementById("lang-select").value);
+
+            const res = await fetch("/predict", {
+                method: "POST",
+                body: formData,
+            });
+
+            const data = await res.json();
+
+            if (data.error) {
+                alert(data.error);
+            } else {
+                displayResult(data.class, data.treatment);
+                const img = document.getElementById("preview");
+                img.src = data.image_url + "?t=" + new Date().getTime();
+                img.style.display = "block";
+            }
+        });
+    </script>
+</body>
+</html>
