@@ -6,69 +6,57 @@ from googletrans import Translator
 import numpy as np
 import os
 
-from cures import cure_dict  # cure_dict is in cures.py
+# استيراد قاموس العلاجات
+try:
+    from cures import cure_dict
+except ImportError:
+    cure_dict = {}
+    print("Warning: cures.py not found or cure_dict missing.")
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
 
-# التأكد من وجود مجلد الرفع عشان ما يعطيك Error لما يحفظ الصورة
+# إعداد المجلدات - استخدام /tmp للسيرفرات لضمان صلاحيات الكتابة
+app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
+
+# التأكد من وجود المجلد عند تشغيل التطبيق (مهم جداً لـ Gunicorn)
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Load the trained model
+# --- تحميل الموديل خارج الـ main ليكون متاحاً لـ Gunicorn ---
+# استخدمنا compile=False لأن EfficientNetB0 قد تسبب مشاكل في التوافق عند التحميل
 try:
     model = load_model('best_model.keras', compile=False)
-    print("Model loaded successfully!")
+    print("✅ Model loaded successfully!")
 except Exception as e:
-    print(f"Error loading model: {e}")
+    model = None
+    print(f"❌ Error loading model: {e}")
 
-# Image input size
+# حجم الصورة المطلوب للموديل
 IMG_SIZE = (224, 224)
 
-# Class labels (must match training order)
-class_names = ['Apple scab',
- 'Apple Black rot',
- 'Apple Cedar apple rust',
- 'Apple healthy',
- 'Blueberry healthy',
- 'Cherry including sour Powdery mildew',
- 'Cherry including sour healthy',
- 'Corn maize Cercospora leaf spot Gray leaf spot',
- 'Corn maize Common rust',
- 'Corn maize Northern Leaf Blight',
- 'Corn maize healthy',
- 'Grape Black_rot',
- 'Grape Esca Black Measles',
- 'Grape Leaf blight Isariopsis Leaf Spot',
- 'Grape healthy',
- 'Orange Haunglongbing Citrus greening',
- 'Peach Bacterial spot',
- 'Peach healthy',
- 'Pepper bell Bacterial spot',
- 'Pepper bell healthy',
- 'Potato Early blight',
- 'Potato Late blight',
- 'Potato healthy',
- 'Raspberry healthy',
- 'Soybean healthy',
- 'Squash Powdery mildew',
- 'Strawberry Leaf scorch',
- 'Strawberry healthy',
- 'Tomato Bacterial spot',
- 'Tomato Early blight',
- 'Tomato Late blight',
- 'Tomato Leaf Mold',
- 'Tomato Septoria leaf spot',
- 'Tomato Spider mites Two spotted spider mite',
- 'Tomato Target Spot',
- 'Tomato Tomato Yellow Leaf Curl Virus',
- 'Tomato Tomato mosaic virus',
- 'Tomato healthy']
+# أسماء الفئات
+class_names = [
+    'Apple scab', 'Apple Black rot', 'Apple Cedar apple rust', 'Apple healthy',
+    'Blueberry healthy', 'Cherry including sour Powdery mildew', 'Cherry including sour healthy',
+    'Corn maize Cercospora leaf spot Gray leaf spot', 'Corn maize Common rust',
+    'Corn maize Northern Leaf Blight', 'Corn maize healthy', 'Grape Black_rot',
+    'Grape Esca Black Measles', 'Grape Leaf blight Isariopsis Leaf Spot', 'Grape healthy',
+    'Orange Haunglongbing Citrus greening', 'Peach Bacterial spot', 'Peach healthy',
+    'Pepper bell Bacterial spot', 'Pepper bell healthy', 'Potato Early blight',
+    'Potato Late blight', 'Potato healthy', 'Raspberry healthy', 'Soybean healthy',
+    'Squash Powdery mildew', 'Strawberry Leaf scorch', 'Strawberry healthy',
+    'Tomato Bacterial spot', 'Tomato Early blight', 'Tomato Late blight',
+    'Tomato Leaf Mold', 'Tomato Septoria leaf spot',
+    'Tomato Spider mites Two spotted spider mite', 'Tomato Target Spot',
+    'Tomato Yellow Leaf Curl Virus', 'Tomato Tomato mosaic virus', 'Tomato healthy'
+]
 
 def prepare_image(img_path):
-    img = image.load_img(img_path, target_size=IMG_SIZE, color_mode='rgb')
+    """تجهيز الصورة لـ EfficientNetB0 (بدون تقسيم على 255)"""
+    img = image.load_img(img_path, target_size=IMG_SIZE)
     img_array = image.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)
+    # ملاحظة: EfficientNetB0 تقوم بالـ Preprocessing داخلياً (Scaling)
     return img_array
 
 @app.route('/')
@@ -77,44 +65,57 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    if model is None:
+        return jsonify({'error': 'Model not loaded on server'}), 500
+
     if 'image' not in request.files:
-        return jsonify({'error': 'No image provided'})
+        return jsonify({'error': 'No image provided'}), 400
 
     file = request.files['image']
     if file.filename == '':
-        return jsonify({'error': 'No image selected'})
+        return jsonify({'error': 'No image selected'}), 400
 
+    # حفظ الصورة
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     file.save(filepath)
 
-    img_array = prepare_image(filepath)
-    predictions = model.predict(img_array)
-    predicted_class_raw = class_names[np.argmax(predictions[0])]  # e.g., Grape___Leaf_blight_(Isariopsis_Leaf_Spot)
+    try:
+        # التوقع
+        img_array = prepare_image(filepath)
+        predictions = model.predict(img_array)
+        predicted_idx = np.argmax(predictions)
+        predicted_class_raw = class_names[predicted_idx]
 
-    # Fix formatting for lookup and translation
-    predicted_key = predicted_class_raw.replace('___', '_')
-    treatment = cure_dict.get(predicted_key, "No treatment info available.")
+        # جلب العلاج من القاموس
+        # تنظيف الاسم للبحث (تبديل الفراغات بـ _ حسب مفاتيح قاموسك)
+        predicted_key = predicted_class_raw.replace(' ', '_').replace('___', '_')
+        treatment = cure_dict.get(predicted_key, "No treatment info available for this condition.")
 
-    # Translation support
-    lang = request.form.get('lang')
-    readable_class = predicted_class_raw.replace('___', ' ').replace('_', ' ')
-    translated_class = readable_class
-    translated_treatment = treatment
+        # دعم الترجمة
+        lang = request.form.get('lang')
+        readable_class = predicted_class_raw.replace('_', ' ')
+        
+        translated_class = readable_class
+        translated_treatment = treatment
 
-    if lang:
-        try:
-            translator = Translator()
-            translated_class = translator.translate(readable_class, dest=lang).text
-            translated_treatment = translator.translate(treatment, dest=lang).text
-        except Exception as e:
-            print("Translation error:", e)
+        if lang and lang != 'en':
+            try:
+                translator = Translator()
+                translated_class = translator.translate(readable_class, dest=lang).text
+                translated_treatment = translator.translate(treatment, dest=lang).text
+            except Exception as e:
+                print(f"Translation error: {e}")
 
-    return jsonify({
-        'class': translated_class,
-        'treatment': translated_treatment,
-        'image_url': filepath
-    })
+        return jsonify({
+            'class': translated_class,
+            'treatment': translated_treatment,
+            'image_url': filepath
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Prediction failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
+    # تشغيل محلي (Local)
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
