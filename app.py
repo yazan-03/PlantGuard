@@ -16,7 +16,11 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # Load the trained model
-model = load_model('best_model.keras')
+try:
+    model = load_model('best_model.keras', compile=False)
+    print("Model loaded successfully!")
+except Exception as e:
+    print(f"Error loading model: {e}")
 
 # Image input size
 IMG_SIZE = (224, 224)
