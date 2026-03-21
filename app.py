@@ -11,6 +11,10 @@ from cures import cure_dict  # cure_dict is in cures.py
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 
+# التأكد من وجود مجلد الرفع عشان ما يعطيك Error لما يحفظ الصورة
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
 # Load the trained model
 model = load_model('best_model.keras')
 
@@ -108,9 +112,5 @@ def predict():
     })
 
 if __name__ == '__main__':
-    # التأكد من وجود مجلد الرفع عشان ما يعطيك Error لما يحفظ الصورة
-    if not os.path.exists(app.config['UPLOAD_FOLDER']):
-        os.makedirs(app.config['UPLOAD_FOLDER'])
-        
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
