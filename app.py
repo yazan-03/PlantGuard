@@ -19,17 +19,17 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
 
 # التأكد من وجود المجلد عند تشغيل التطبيق (مهم جداً لـ Gunicorn)
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# --- تحميل الموديل خارج الـ main ليكون متاحاً لـ Gunicorn ---
-# استخدمنا compile=False لأن EfficientNetB0 قد تسبب مشاكل في التوافق عند التحميل
 try:
+    # تحميل الموديل بدون Compile لتجنب تضارب الطبقات
     model = load_model('best_model.keras', compile=False)
-    print("✅ Model loaded successfully!")
+    
+    # إعادة بناء الموديل يدوياً بالأبعاد الصحيحة لـ EfficientNetB0
+    model.build((None, 224, 224, 3)) 
+    
+    print("✅ Model loaded successfully using build() method!")
 except Exception as e:
     model = None
-    print(f"❌ Error loading model: {e}")
+    print(f"❌ Critical Error: {e}")
 
 # حجم الصورة المطلوب للموديل
 IMG_SIZE = (224, 224)
