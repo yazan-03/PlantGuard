@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/27479551/README.md)
 # 🌿 PlantGuard
 
 **PlantGuard** is a deep learning-based plant disease detection system that classifies plant leaf images into 38 disease and healthy categories. It uses a fine-tuned EfficientNetB0 model trained on the PlantVillage dataset and is deployed as a Flask web application.
